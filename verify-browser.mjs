@@ -52,6 +52,11 @@ async function main() {
     assert.equal(desktopRes.segments, 3, 'Expected 3 detected speech turns in multiturn_3lang.wav');
     assert.equal(desktopRes.seamOk, true, 'Expected Hann seam continuity ok === true');
 
+    const highlightedTokens = await page.evaluate(
+      () => document.querySelectorAll('pre code .token-keyword, pre code .token-string').length
+    );
+    assert.ok(highlightedTokens >= 8, `Expected syntax-highlighted code tokens, found ${highlightedTokens}`);
+
     // Switch to Zero-Dep DSP tier in live UI
     await page.selectOption('#tier-select', 'dsp');
     await page.waitForFunction(() => window.__WASM_VAD_INFO__?.tier === 'dsp', { timeout: 5000 });

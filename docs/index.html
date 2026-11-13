@@ -428,12 +428,37 @@
       border: 1px solid var(--border);
       border-radius: 12px;
       padding: 18px;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .code-card-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 10px;
     }
 
     .code-card h3 {
-      margin: 0 0 10px;
-      font-size: 0.96rem;
+      margin: 0;
+      font-size: 0.94rem;
       font-weight: 700;
+    }
+
+    .copy-code-btn {
+      background: var(--surface-subtle);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 3px 9px;
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      cursor: pointer;
+      color: var(--ink-secondary);
+    }
+    .copy-code-btn:hover {
+      border-color: var(--ink);
+      color: var(--ink);
     }
 
     pre {
@@ -441,12 +466,25 @@
       padding: 14px;
       border-radius: 8px;
       background: #141416;
-      color: #f4f4f5;
+      color: #e5e1d8;
       font-family: var(--font-mono);
       font-size: 0.8rem;
-      line-height: 1.55;
+      line-height: 1.58;
       overflow-x: auto;
+      flex: 1;
     }
+
+    /* Syntax Highlighter Tokens (gpu-lexer + fast lexical fallback, zero purple vibe colors) */
+    .token-keyword { color: #fca582; font-weight: 600; }
+    .token-string { color: #8ce3b9; }
+    .token-comment { color: #8b99a8; font-style: italic; }
+    .token-number { color: #fde28e; }
+    .token-function { color: #7dd3fc; }
+    .token-type { color: #5eead4; }
+    .token-constant { color: #fca7a7; }
+    .token-property { color: #e2e8f0; }
+    .token-operator { color: #cbd5e1; }
+    .token-plain { color: #e5e1d8; }
 
     footer {
       border-top: 1px solid var(--border);
@@ -664,23 +702,34 @@
 
     <!-- Progressive Code Examples -->
     <section id="usage">
-      <div class="eyebrow">Ergonomic API</div>
-      <h2>Three Lines to Start, Full Streaming Control When Needed</h2>
+      <div style="display:flex; align-items:baseline; justify-content:space-between; flex-wrap:wrap; gap:8px;">
+        <div>
+          <div class="eyebrow">Ergonomic API</div>
+          <h2>Three Lines to Start, Full Streaming Control When Needed</h2>
+        </div>
+        <span id="hl-engine-badge" class="status-pill">Syntax: fast-lex</span>
+      </div>
       <div class="code-grid">
         <div class="code-card">
-          <h3>1. One-Shot Detection &amp; Silence Trimming</h3>
-          <pre><code>import vad from 'wasm-vad';
+          <div class="code-card-head">
+            <h3>1. One-Shot Detection &amp; Trimming</h3>
+            <button class="copy-code-btn" type="button">Copy</button>
+          </div>
+          <pre><code data-lang="js">import vad from 'wasm-vad';
 
 const segments = await vad('./meeting.wav');
-// [{ startMs: 480, endMs: 2912, confidence: 0.94, pcm, wav }]
+// [{ startMs: 352, endMs: 4416, confidence: 0.92, pcm, wav }]
 
 const detector = await vad(); // auto capability-routed
 const clean = await detector.trim('./podcast.wav');
 // clean.wav -> click-free Hann-crossfaded 16 kHz WAV</code></pre>
         </div>
         <div class="code-card">
-          <h3>2. Live Browser Microphone (AudioWorklet)</h3>
-          <pre><code>import vad from 'wasm-vad';
+          <div class="code-card-head">
+            <h3>2. Live Microphone (AudioWorklet)</h3>
+            <button class="copy-code-btn" type="button">Copy</button>
+          </div>
+          <pre><code data-lang="js">import vad from 'wasm-vad';
 
 const detector = await vad();
 const mic = await detector.listen({
@@ -689,6 +738,19 @@ const mic = await detector.listen({
   onSpeechEnd: (utterance) =&gt;
     sendToWhisperOrAsr(utterance.wav),
 });</code></pre>
+        </div>
+        <div class="code-card">
+          <div class="code-card-head">
+            <h3>3. Streaming Generator &amp; CLI</h3>
+            <button class="copy-code-btn" type="button">Copy</button>
+          </div>
+          <pre><code data-lang="js">for await (const turn of detector.stream(pcmStream, { sampleRate: 48000 })) {
+  console.log(turn.startMs, turn.endMs, turn.confidence);
+}
+
+// CLI: JSON segments or Hann-trimmed WAV
+// npx wasm-vad input.wav --json
+// npx wasm-vad input.wav --trim -o speech.wav --tier mobile</code></pre>
         </div>
       </div>
     </section>
@@ -701,6 +763,107 @@ const mic = await detector.listen({
 
   <script type="module">
     import vad, { decodeWav, encodeWav } from './wasm-vad.browser.mjs';
+
+    // Progressive Syntax Highlighter: instant sticky-regex pass + WebGPU `gpu-lexer` upgrade
+    function escapeHtml(s) {
+      return String(s)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    function highlightLexical(code) {
+      const patterns = [
+        { type: 'comment', regex: /(\/\/[^\n]*|\/\*[\s\S]*?\*\/)/y },
+        { type: 'string', regex: /(`(?:\\.|[^`])*`|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')/y },
+        { type: 'number', regex: /\b\d+(?:\.\d+)?\b/y },
+        {
+          type: 'keyword',
+          regex: /\b(?:import|export|from|as|const|let|var|function|return|if|else|for|while|in|of|await|async|new|class|try|catch|true|false|null|undefined|default)\b/y,
+        },
+        { type: 'function', regex: /\b([a-zA-Z_$][a-zA-Z0-9_$]*)(?=\s*\()/y },
+        { type: 'constant', regex: /\b[A-Z_][A-Z0-9_]{2,}\b/y },
+        { type: 'operator', regex: /(=&gt;|===|!==|==|!=|&lt;=|&gt;=|\.\.\.|[=+\-*/%&|^!~?:]+)/y },
+        { type: 'plain', regex: /[a-zA-Z_$][a-zA-Z0-9_$]*|\s+|./y },
+      ];
+
+      let html = '';
+      let i = 0;
+      while (i < code.length) {
+        let matched = false;
+        for (const p of patterns) {
+          p.regex.lastIndex = i;
+          const m = p.regex.exec(code);
+          if (m && m.index === i) {
+            const txt = escapeHtml(m[0]);
+            html += p.type === 'plain' ? txt : `<span class="token-${p.type}">${txt}</span>`;
+            i += m[0].length;
+            matched = true;
+            break;
+          }
+        }
+        if (!matched) {
+          html += escapeHtml(code[i++]);
+        }
+      }
+      return html;
+    }
+
+    async function highlightAllCodeBlocks() {
+      const blocks = Array.from(document.querySelectorAll('pre code[data-lang]'));
+      const rawSources = blocks.map((el) => {
+        const raw = el.textContent;
+        el.dataset.raw = raw;
+        el.innerHTML = highlightLexical(raw);
+        return raw;
+      });
+
+      document.querySelectorAll('.code-card').forEach((card) => {
+        const btn = card.querySelector('.copy-code-btn');
+        const codeEl = card.querySelector('code');
+        if (btn && codeEl) {
+          btn.addEventListener('click', () => {
+            navigator.clipboard?.writeText(codeEl.dataset.raw || codeEl.textContent);
+            btn.textContent = 'Copied';
+            setTimeout(() => (btn.textContent = 'Copy'), 1400);
+          });
+        }
+      });
+
+      // Progressive WebGPU upgrade via `gpu-lexer` when navigator.gpu adapter is available
+      if (navigator.gpu) {
+        try {
+          const adapter = await navigator.gpu.requestAdapter();
+          if (adapter) {
+            const mod = await import('https://cdn.jsdelivr.net/npm/gpu-lexer@0.0.3/dist/index.js');
+            if (typeof mod.parse === 'function') {
+              for (let idx = 0; idx < blocks.length; idx++) {
+                const raw = rawSources[idx];
+                const spans = await mod.parse(raw);
+                if (Array.isArray(spans) && spans.length > 0) {
+                  let html = '';
+                  let last = 0;
+                  for (const s of spans) {
+                    if (s.start > last) html += escapeHtml(raw.slice(last, s.start));
+                    const txt = escapeHtml(raw.slice(s.start, s.end));
+                    html += s.type === 'plain' ? txt : `<span class="token-${s.type}">${txt}</span>`;
+                    last = s.end;
+                  }
+                  if (last < raw.length) html += escapeHtml(raw.slice(last));
+                  blocks[idx].innerHTML = html;
+                }
+              }
+              const hlBadge = document.getElementById('hl-engine-badge');
+              if (hlBadge) hlBadge.textContent = 'Syntax: gpu-lexer (WebGPU)';
+            }
+          }
+        } catch {
+          // Keep synchronous lexical tokens silently
+        }
+      }
+    }
+    highlightAllCodeBlocks();
 
     const ORT_CDN_BASE = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.29.0/dist/';
     if (window.ort?.env?.wasm) {
