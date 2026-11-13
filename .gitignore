@@ -1,0 +1,6 @@
+node_modules
+models/silero_vad_raw.onnx
+docs/ort
+bench/.cache
+.DS_Store
+*.tgz

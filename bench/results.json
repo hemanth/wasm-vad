@@ -1,0 +1,130 @@
+{
+  "generatedAt": "2026-11-13T03:56:57.149Z",
+  "methodology": {
+    "streamsN": 120,
+    "totalFrames": 24265,
+    "totalAudioSeconds": 776.5,
+    "languages": 12,
+    "bootstrapResamplesB": 1000,
+    "conditions": [
+      "clean_multiturn",
+      "noisy_12dB",
+      "noisy_5dB",
+      "hum_5dB",
+      "adversarial_nonspeech"
+    ],
+    "sampleRateHz": 16000,
+    "frameMs": 32
+  },
+  "results": [
+    {
+      "name": "Naive RMS Energy Gate",
+      "weightsBytes": 0,
+      "f1": 79.05,
+      "f1Ci95": [
+        76.65,
+        81.26
+      ],
+      "precision": 68.28,
+      "recall": 93.86,
+      "rocAuc": 0.6735,
+      "adversarialFprPct": 77.08,
+      "adversarialFprCi95": [
+        59.26,
+        92.36
+      ],
+      "onsetMaeMs": null,
+      "offsetMaeMs": null,
+      "rtf": 0.000019,
+      "frameLatencyUs": {
+        "mean": 0.56,
+        "p95": 1.04,
+        "p99": 2.29
+      }
+    },
+    {
+      "name": "wasm-vad Zero-Dep Spectral-LRT (0 KB)",
+      "tier": "dsp",
+      "weightsBytes": 0,
+      "splitMs": 0,
+      "f1": 82.84,
+      "f1Ci95": [
+        79.52,
+        86.14
+      ],
+      "precision": 89.91,
+      "recall": 76.81,
+      "rocAuc": 0.9053,
+      "adversarialFprPct": 8.07,
+      "adversarialFprCi95": [
+        4.17,
+        12.82
+      ],
+      "onsetMaeMs": 410.5,
+      "offsetMaeMs": 362.8,
+      "rtf": 0.000369,
+      "speedupRealtime": 2711.7,
+      "frameLatencyUs": {
+        "mean": 11.6,
+        "p95": 14.5,
+        "p99": 63.2
+      }
+    },
+    {
+      "name": "wasm-vad Mobile Hybrid W8A32+FP16 (432 KiB)",
+      "tier": "mobile",
+      "weightsBytes": 442422,
+      "splitMs": 0.521,
+      "f1": 95.01,
+      "f1Ci95": [
+        94.35,
+        95.67
+      ],
+      "precision": 97.04,
+      "recall": 93.06,
+      "rocAuc": 0.9822,
+      "adversarialFprPct": 0,
+      "adversarialFprCi95": [
+        0,
+        0
+      ],
+      "onsetMaeMs": 180.7,
+      "offsetMaeMs": 261.5,
+      "rtf": 0.002683,
+      "speedupRealtime": 372.7,
+      "frameLatencyUs": {
+        "mean": 107.3,
+        "p95": 115.5,
+        "p99": 162.6
+      }
+    },
+    {
+      "name": "wasm-vad Studio FP32 Graph-Split (1.24 MB)",
+      "tier": "studio",
+      "weightsBytes": 1244994,
+      "splitMs": 0.272,
+      "f1": 95.08,
+      "f1Ci95": [
+        94.41,
+        95.78
+      ],
+      "precision": 97.15,
+      "recall": 93.1,
+      "rocAuc": 0.9828,
+      "adversarialFprPct": 0,
+      "adversarialFprCi95": [
+        0,
+        0
+      ],
+      "onsetMaeMs": 178.5,
+      "offsetMaeMs": 260,
+      "rtf": 0.002158,
+      "speedupRealtime": 463.5,
+      "frameLatencyUs": {
+        "mean": 91.8,
+        "p95": 99.2,
+        "p99": 200.5
+      }
+    }
+  ]
+}

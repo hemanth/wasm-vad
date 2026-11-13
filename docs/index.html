@@ -1,0 +1,1049 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>wasm-vad — Capability-Routed 16 kHz Voice Activity Detection</title>
+  <meta name="description" content="Streaming 16 kHz voice activity detection for browsers and Node.js via capability-routed WebGPU/WASM SIMD ONNX specialists (432 KiB mobile / 1.24 MB studio), AudioWorklet capture, and zero-dep spectral-LRT fallback." />
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23121214'/%3E%3Cpath d='M6 16h3l3-7 4 14 4-10 3 3h3' stroke='%23ffffff' stroke-width='2.4' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500;600&family=Playfair+Display:ital,wght@0,600;1,600&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/onnxruntime-web@1.29.0/dist/ort.wasm.min.js" crossorigin="anonymous"></script>
+  <style>
+    :root {
+      --bg: #fbfaf7;
+      --surface: #ffffff;
+      --surface-subtle: #f4f2ec;
+      --ink: #121214;
+      --ink-secondary: #4a4a52;
+      --ink-muted: #71717a;
+      --border: #e4e1d8;
+      --border-strong: #18181b;
+      --accent: #0f766e;
+      --accent-soft: rgba(15, 118, 110, 0.11);
+      --amber: #b45309;
+      --radius: 12px;
+      --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+      --font-serif: 'Playfair Display', Georgia, serif;
+      --font-mono: 'Geist Mono', 'SF Mono', ui-monospace, monospace;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: var(--font-sans);
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* Subtle analog paper grain */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 999;
+      opacity: 0.025;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+    }
+
+    .nav {
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      background: rgba(251, 250, 247, 0.86);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .nav-inner {
+      max-width: 1080px;
+      margin: 0 auto;
+      padding: 12px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-family: var(--font-mono);
+      font-weight: 600;
+      font-size: 0.95rem;
+      color: var(--ink);
+      text-decoration: none;
+    }
+
+    .brand-dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 50%;
+      background: var(--ink);
+    }
+
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      font-size: 0.88rem;
+      font-weight: 500;
+    }
+
+    .nav-links a {
+      color: var(--ink-secondary);
+      text-decoration: none;
+    }
+    .nav-links a:hover { color: var(--ink); }
+
+    .container {
+      max-width: 1080px;
+      margin: 0 auto;
+      padding: 44px 24px 88px;
+    }
+
+    .eyebrow {
+      font-family: var(--font-mono);
+      font-size: 0.76rem;
+      font-weight: 600;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-bottom: 12px;
+    }
+
+    h1 {
+      font-size: clamp(2.1rem, 4.4vw, 3.25rem);
+      font-weight: 800;
+      letter-spacing: -0.03em;
+      line-height: 1.1;
+      margin: 0 0 16px;
+    }
+
+    h1 em {
+      font-family: var(--font-serif);
+      font-weight: 600;
+      font-style: italic;
+    }
+
+    .lead {
+      font-size: 1.08rem;
+      color: var(--ink-secondary);
+      max-width: 760px;
+      margin: 0 0 24px;
+    }
+
+    .install-bar {
+      display: inline-flex;
+      align-items: center;
+      gap: 14px;
+      background: var(--surface);
+      border: 1.5px solid var(--border-strong);
+      border-radius: 9px;
+      padding: 9px 16px;
+      font-family: var(--font-mono);
+      font-size: 0.88rem;
+      margin-bottom: 36px;
+    }
+
+    .install-bar button {
+      background: var(--surface-subtle);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 4px 10px;
+      font-family: var(--font-mono);
+      font-size: 0.76rem;
+      cursor: pointer;
+      color: var(--ink);
+    }
+
+    /* Interactive Oscilloscope Workbench */
+    .workbench {
+      background: var(--surface);
+      border: 1.5px solid var(--border-strong);
+      border-radius: 14px;
+      padding: 24px;
+      margin-bottom: 52px;
+    }
+
+    .wb-header {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      padding-bottom: 18px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 18px;
+    }
+
+    .wb-title {
+      font-weight: 700;
+      font-size: 1.05rem;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .status-pill {
+      font-family: var(--font-mono);
+      font-size: 0.74rem;
+      padding: 3px 9px;
+      border-radius: 999px;
+      background: var(--surface-subtle);
+      border: 1px solid var(--border);
+      color: var(--ink-secondary);
+    }
+
+    .status-pill.ready {
+      background: var(--accent-soft);
+      border-color: rgba(15, 118, 110, 0.3);
+      color: var(--accent);
+    }
+
+    .controls-row {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 14px;
+      margin-bottom: 18px;
+    }
+
+    .control-group {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .control-group label {
+      font-family: var(--font-mono);
+      font-size: 0.74rem;
+      font-weight: 600;
+      color: var(--ink-secondary);
+      display: flex;
+      justify-content: space-between;
+    }
+
+    select, input[type="range"] {
+      width: 100%;
+      font-family: var(--font-sans);
+      font-size: 0.88rem;
+    }
+
+    select {
+      padding: 8px 10px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--bg);
+      color: var(--ink);
+      font-weight: 500;
+    }
+
+    input[type="range"] {
+      accent-color: var(--ink);
+    }
+
+    .preset-strip {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 18px;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      padding: 8px 13px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: var(--bg);
+      color: var(--ink);
+      font-family: var(--font-sans);
+      font-size: 0.84rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.12s ease, border-color 0.12s ease;
+    }
+
+    .btn:hover {
+      border-color: var(--ink);
+    }
+
+    .btn.active, .btn-primary {
+      background: var(--ink);
+      color: #ffffff;
+      border-color: var(--ink);
+    }
+
+    .btn-accent {
+      background: var(--accent);
+      color: #ffffff;
+      border-color: var(--accent);
+    }
+
+    .canvas-wrap {
+      position: relative;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: #faf9f5;
+      overflow: hidden;
+      margin-bottom: 16px;
+    }
+
+    canvas#scope {
+      display: block;
+      width: 100%;
+      height: 250px;
+    }
+
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+
+    .kpi-card {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 9px;
+      padding: 10px 12px;
+    }
+
+    .kpi-label {
+      font-family: var(--font-mono);
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--ink-muted);
+    }
+
+    .kpi-value {
+      font-family: var(--font-mono);
+      font-size: 1.05rem;
+      font-weight: 600;
+      color: var(--ink);
+      margin-top: 2px;
+    }
+
+    .playback-bar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding-top: 12px;
+      border-top: 1px solid var(--border);
+    }
+
+    .segment-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 12px;
+    }
+
+    .seg-chip {
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      padding: 4px 9px;
+      border-radius: 6px;
+      background: var(--accent-soft);
+      color: var(--accent);
+      border: 1px solid rgba(15, 118, 110, 0.25);
+      cursor: pointer;
+    }
+
+    section {
+      margin-bottom: 56px;
+    }
+
+    h2 {
+      font-size: 1.45rem;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      margin: 0 0 14px;
+    }
+
+    .diagram-frame {
+      background: #ffffff;
+      border: 1.5px solid var(--border-strong);
+      border-radius: 14px;
+      padding: 16px;
+      overflow-x: auto;
+    }
+
+    .diagram-frame img {
+      display: block;
+      width: 100%;
+      height: auto;
+      max-width: 960px;
+      margin: 0 auto;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      background: var(--surface);
+      border: 1.5px solid var(--border-strong);
+      border-radius: 12px;
+      overflow: hidden;
+      font-size: 0.88rem;
+    }
+
+    th, td {
+      text-align: left;
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    th {
+      background: var(--surface-subtle);
+      font-family: var(--font-mono);
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: var(--ink-secondary);
+    }
+
+    td.mono { font-family: var(--font-mono); font-size: 0.83rem; }
+    tr.highlight td { background: rgba(15, 118, 110, 0.05); font-weight: 600; }
+
+    .code-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(310px, 1fr));
+      gap: 16px;
+    }
+
+    .code-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 18px;
+    }
+
+    .code-card h3 {
+      margin: 0 0 10px;
+      font-size: 0.96rem;
+      font-weight: 700;
+    }
+
+    pre {
+      margin: 0;
+      padding: 14px;
+      border-radius: 8px;
+      background: #141416;
+      color: #f4f4f5;
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      line-height: 1.55;
+      overflow-x: auto;
+    }
+
+    footer {
+      border-top: 1px solid var(--border);
+      padding-top: 24px;
+      display: flex;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 12px;
+      font-size: 0.85rem;
+      color: var(--ink-muted);
+    }
+
+    footer a { color: var(--ink); text-decoration: none; font-weight: 600; }
+  </style>
+</head>
+<body>
+  <nav class="nav">
+    <div class="nav-inner">
+      <a href="#" class="brand">
+        <span class="brand-dot"></span>
+        <span>wasm-vad</span>
+      </a>
+      <div class="nav-links">
+        <a href="#workbench">Workbench</a>
+        <a href="#architecture">Architecture</a>
+        <a href="#benchmarks">Benchmarks</a>
+        <a href="#usage">API</a>
+        <a href="https://github.com/hemanth/wasm-vad">GitHub</a>
+      </div>
+    </div>
+  </nav>
+
+  <main class="container">
+    <div class="eyebrow">Capability-Routed Browser &amp; Node.js Audio Specialist</div>
+    <h1>Streaming 16 kHz Voice Activity Detection with <em>Zero Boundary Clicks</em>.</h1>
+    <p class="lead">
+      Distilled branch-free ONNX specialists (<strong>432 KiB</strong> mobile hybrid <code>W8A32+FP16</code> &amp;
+      <strong>1.24 MB</strong> studio <code>FP32</code>), sub-millisecond binary protobuf graph splitting,
+      <code>AudioWorklet</code> anti-aliased capture, and a <code>0 KB</code> spectral-LRT fallback.
+    </p>
+
+    <div class="install-bar">
+      <span>$ npm install wasm-vad onnxruntime-web</span>
+      <button id="copy-install" type="button">Copy</button>
+    </div>
+
+    <!-- Interactive Workbench -->
+    <section id="workbench" class="workbench">
+      <div class="wb-header">
+        <div class="wb-title">
+          <span>Real-Time VAD &amp; Turn-Taking Oscilloscope</span>
+          <span id="runtime-badge" class="status-pill">Initializing...</span>
+        </div>
+        <div style="display:flex; gap:8px; align-items:center;">
+          <button id="mic-btn" class="btn" type="button">Live Mic (AudioWorklet)</button>
+          <label class="btn" style="margin:0;">
+            Upload WAV
+            <input id="file-input" type="file" accept=".wav,audio/wav" style="display:none;" />
+          </label>
+        </div>
+      </div>
+
+      <div class="preset-strip" id="preset-strip">
+        <button class="btn active" data-preset="./samples/multiturn_3lang.wav" type="button">
+          1. Multi-Turn (English + Hindi + Sanskrit)
+        </button>
+        <button class="btn" data-preset="./samples/noisy_hum_5db.wav" type="button">
+          2. +5 dB Street Pink Noise + 50/60 Hz Hum
+        </button>
+        <button class="btn" data-preset="./samples/sa_madhva.wav" type="button">
+          3. Classical Sanskrit (Geminate Stops)
+        </button>
+        <button class="btn" data-preset="./samples/kanglish.wav" type="button">
+          4. Code-Switched Kanglish
+        </button>
+      </div>
+
+      <div class="controls-row">
+        <div class="control-group">
+          <label for="tier-select"><span>Specialist Tier</span><span id="tier-weight-label">auto</span></label>
+          <select id="tier-select">
+            <option value="auto">Auto (Capability-Routed)</option>
+            <option value="mobile">Mobile Hybrid W8A32+FP16 (432 KiB)</option>
+            <option value="studio">Studio FP32 Graph-Split (1.24 MB)</option>
+            <option value="dsp">Zero-Dep Spectral-LRT (0 KB)</option>
+          </select>
+        </div>
+        <div class="control-group">
+          <label for="thresh-slider"><span>Onset Threshold</span><span id="thresh-val">0.50</span></label>
+          <input id="thresh-slider" type="range" min="0.20" max="0.85" step="0.05" value="0.50" />
+        </div>
+        <div class="control-group">
+          <label for="redemption-slider"><span>Geminate Hangover</span><span id="redemption-val">320 ms</span></label>
+          <input id="redemption-slider" type="range" min="128" max="640" step="32" value="320" />
+        </div>
+      </div>
+
+      <div class="canvas-wrap">
+        <canvas id="scope" width="1020" height="250"></canvas>
+      </div>
+
+      <div class="kpi-grid">
+        <div class="kpi-card">
+          <div class="kpi-label">Active Tier / COI</div>
+          <div class="kpi-value" id="kpi-tier">—</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Protobuf Split</div>
+          <div class="kpi-value" id="kpi-split">—</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Inference / RTF</div>
+          <div class="kpi-value" id="kpi-rtf">—</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Speech Ratio</div>
+          <div class="kpi-value" id="kpi-ratio">—</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Hann Seam Ratio</div>
+          <div class="kpi-value" id="kpi-seam">—</div>
+        </div>
+      </div>
+
+      <div class="playback-bar">
+        <div style="display:flex; flex-wrap:wrap; gap:8px;">
+          <button id="play-orig-btn" class="btn" type="button">Play Original</button>
+          <button id="play-trim-btn" class="btn btn-accent" type="button">Play De-Clicked Trimmed Speech</button>
+          <button id="download-trim-btn" class="btn" type="button">Download Trimmed WAV</button>
+        </div>
+        <span id="summary-line" style="font-family:var(--font-mono); font-size:0.78rem; color:var(--ink-secondary);"></span>
+      </div>
+
+      <div id="segment-chips" class="segment-chips"></div>
+    </section>
+
+    <!-- Architecture Blueprint -->
+    <section id="architecture">
+      <div class="eyebrow">System Architecture</div>
+      <h2>Why Branch-Free ONNX + Client-Side Protobuf Graph Splitting?</h2>
+      <p class="lead" style="font-size:0.98rem;">
+        Official <code>silero_vad.onnx</code> (2.33 MB) embeds both 8 kHz and 16 kHz networks inside 7 nested
+        <code>If</code> control-flow subgraphs, forcing WebGPU fallback to CPU and serializing batch inference.
+        <code>wasm-vad</code> distills a branch-free 16 kHz graph and splits it in browser RAM in <strong>&lt;1 ms</strong>
+        at <code>acoustic_features</code> so batch detection vectorizes the entire Conv encoder in one pass.
+      </p>
+      <div class="diagram-frame">
+        <img src="./flow-diagram.svg" alt="wasm-vad 4-stage streaming architecture diagram" width="980" height="340" />
+      </div>
+    </section>
+
+    <!-- Empirical Benchmark Table -->
+    <section id="benchmarks">
+      <div class="eyebrow">Empirical Evaluation (N = 120 Streams, 12 Languages, B = 1,000 Bootstrap)</div>
+      <h2>Head-to-Head Accuracy, Noise Rejection &amp; Throughput</h2>
+      <p class="lead" style="font-size:0.96rem;">
+        Evaluated across 24,265 frames (776.5 s @ 16 kHz) spanning clean multi-turn speech across 12 languages,
+        +12 dB &amp; +5 dB broadband pink noise, +5 dB 50/60 Hz mains hum, and 24 pure adversarial non-speech streams
+        (hum, pink/white noise, keyboard click bursts, desk thumps, and pure sine tones).
+      </p>
+      <div style="overflow-x:auto;">
+        <table>
+          <thead>
+            <tr>
+              <th>Engine</th>
+              <th>Weights</th>
+              <th>Frame F1 [95% CI]</th>
+              <th>ROC-AUC</th>
+              <th>Non-Speech FPR</th>
+              <th>RTF</th>
+              <th>Frame p95</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Naive RMS Energy Gate</td>
+              <td class="mono">0 KB</td>
+              <td class="mono">79.05% [76.65..81.26]</td>
+              <td class="mono">0.6735</td>
+              <td class="mono">77.08%</td>
+              <td class="mono">0.000019</td>
+              <td class="mono">1.0 µs</td>
+            </tr>
+            <tr>
+              <td>wasm-vad Zero-Dep Spectral-LRT (<code>dsp</code>)</td>
+              <td class="mono">0 KB</td>
+              <td class="mono">82.84% [79.52..86.14]</td>
+              <td class="mono">0.9053</td>
+              <td class="mono">8.07%</td>
+              <td class="mono">0.000369</td>
+              <td class="mono">14.5 µs</td>
+            </tr>
+            <tr class="highlight">
+              <td>wasm-vad Mobile Hybrid W8A32+FP16 (<code>mobile</code>)</td>
+              <td class="mono">432 KiB</td>
+              <td class="mono">95.01% [94.35..95.67]</td>
+              <td class="mono">0.9822</td>
+              <td class="mono">0.00%</td>
+              <td class="mono">0.002683</td>
+              <td class="mono">115.5 µs</td>
+            </tr>
+            <tr class="highlight">
+              <td>wasm-vad Studio FP32 Graph-Split (<code>studio</code>)</td>
+              <td class="mono">1.24 MB</td>
+              <td class="mono">95.08% [94.41..95.78]</td>
+              <td class="mono">0.9828</td>
+              <td class="mono">0.00%</td>
+              <td class="mono">0.002158</td>
+              <td class="mono">99.2 µs</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Progressive Code Examples -->
+    <section id="usage">
+      <div class="eyebrow">Ergonomic API</div>
+      <h2>Three Lines to Start, Full Streaming Control When Needed</h2>
+      <div class="code-grid">
+        <div class="code-card">
+          <h3>1. One-Shot Detection &amp; Silence Trimming</h3>
+          <pre><code>import vad from 'wasm-vad';
+
+const segments = await vad('./meeting.wav');
+// [{ startMs: 480, endMs: 2912, confidence: 0.94, pcm, wav }]
+
+const detector = await vad(); // auto capability-routed
+const clean = await detector.trim('./podcast.wav');
+// clean.wav -> click-free Hann-crossfaded 16 kHz WAV</code></pre>
+        </div>
+        <div class="code-card">
+          <h3>2. Live Browser Microphone (AudioWorklet)</h3>
+          <pre><code>import vad from 'wasm-vad';
+
+const detector = await vad();
+const mic = await detector.listen({
+  onSpeechStart: ({ startMs, snrDb }) =&gt;
+    console.log('Turn started @', startMs, snrDb),
+  onSpeechEnd: (utterance) =&gt;
+    sendToWhisperOrAsr(utterance.wav),
+});</code></pre>
+        </div>
+      </div>
+    </section>
+
+    <footer>
+      <div>Built with empirical rigor from lessons in <code>ninada</code> &amp; <code>swanada</code>.</div>
+      <div>MIT &copy; <a href="https://h3manth.com">Hemanth.HM</a></div>
+    </footer>
+  </main>
+
+  <script type="module">
+    import vad, { decodeWav, encodeWav } from './wasm-vad.browser.mjs';
+
+    const ORT_CDN_BASE = 'https://cdn.jsdelivr.net/npm/onnxruntime-web@1.29.0/dist/';
+    if (window.ort?.env?.wasm) {
+      window.ort.env.wasm.wasmPaths = ORT_CDN_BASE;
+    }
+
+    const els = {
+      badge: document.getElementById('runtime-badge'),
+      tierSelect: document.getElementById('tier-select'),
+      tierWeightLabel: document.getElementById('tier-weight-label'),
+      threshSlider: document.getElementById('thresh-slider'),
+      threshVal: document.getElementById('thresh-val'),
+      redempSlider: document.getElementById('redemption-slider'),
+      redempVal: document.getElementById('redemption-val'),
+      canvas: document.getElementById('scope'),
+      kpiTier: document.getElementById('kpi-tier'),
+      kpiSplit: document.getElementById('kpi-split'),
+      kpiRtf: document.getElementById('kpi-rtf'),
+      kpiRatio: document.getElementById('kpi-ratio'),
+      kpiSeam: document.getElementById('kpi-seam'),
+      summary: document.getElementById('summary-line'),
+      chips: document.getElementById('segment-chips'),
+      playOrig: document.getElementById('play-orig-btn'),
+      playTrim: document.getElementById('play-trim-btn'),
+      dlTrim: document.getElementById('download-trim-btn'),
+      micBtn: document.getElementById('mic-btn'),
+      fileInput: document.getElementById('file-input'),
+      copyBtn: document.getElementById('copy-install'),
+    };
+
+    const state = {
+      detector: null,
+      currentTierKey: '',
+      currentPcm: null,
+      lastDetailed: null,
+      lastTrimmed: null,
+      audioCtx: null,
+      activeSource: null,
+      micController: null,
+      liveProbHistory: [],
+      liveWaveHistory: [],
+    };
+
+    els.copyBtn.addEventListener('click', () => {
+      navigator.clipboard?.writeText('npm install wasm-vad onnxruntime-web');
+      els.copyBtn.textContent = 'Copied';
+      setTimeout(() => (els.copyBtn.textContent = 'Copy'), 1400);
+    });
+
+    async function ensureDetector() {
+      const selected = els.tierSelect.value;
+      const tierOpt = selected === 'auto' ? undefined : selected;
+      const key = selected;
+      if (state.detector && state.currentTierKey === key) {
+        return state.detector;
+      }
+      if (state.detector) {
+        await state.detector.dispose();
+        state.detector = null;
+      }
+
+      els.badge.textContent = 'Loading specialist...';
+      els.badge.classList.remove('ready');
+
+      const modelBase = new URL('./models/', window.location.href).href;
+      const opts = {
+        ort: window.ort,
+        wasmPaths: ORT_CDN_BASE,
+      };
+      if (tierOpt) opts.tier = tierOpt;
+      if (tierOpt !== 'dsp') {
+        const probeMobile =
+          tierOpt === 'mobile' ||
+          (!tierOpt && (/Android|iPhone|iPad|Mobile/i.test(navigator.userAgent) || (navigator.deviceMemory && navigator.deviceMemory <= 4)));
+        opts.modelUrl = modelBase + (probeMobile ? 'vad-mobile.onnx' : 'vad-studio.onnx');
+      }
+
+      const det = await vad(opts);
+      state.detector = det;
+      state.currentTierKey = key;
+
+      const kb = det.info.modelBytes ? `${Math.round(det.info.modelBytes / 1024)} KiB` : '0 KB';
+      els.tierWeightLabel.textContent = kb;
+      els.badge.textContent = `${det.info.tier} (${det.info.backend}, ${det.info.numThreads}T)`;
+      els.badge.classList.add('ready');
+      els.kpiTier.textContent = `${det.info.tier} · COI:${det.info.crossOriginIsolated ? 'yes' : 'no'}`;
+      els.kpiSplit.textContent = det.info.modelBytes ? `${det.info.splitMs} ms` : '0 ms (DSP)';
+
+      window.__WASM_VAD_INFO__ = det.info;
+      return det;
+    }
+
+    function drawOscilloscope(pcm, probabilities, segments, threshold) {
+      const canvas = els.canvas;
+      const dpr = window.devicePixelRatio || 1;
+      const rect = canvas.getBoundingClientRect();
+      const w = Math.max(320, Math.floor(rect.width));
+      const h = 250;
+      if (canvas.width !== w * dpr || canvas.height !== h * dpr) {
+        canvas.width = w * dpr;
+        canvas.height = h * dpr;
+      }
+      const ctx = canvas.getContext('2d');
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, w, h);
+
+      const waveTop = 14;
+      const waveH = 122;
+      const waveMid = waveTop + waveH / 2;
+      const probTop = 152;
+      const probH = 82;
+
+      const totalMs = Math.max(1, (pcm.length / 16000) * 1000);
+
+      // Shaded speech segments across both tracks
+      ctx.fillStyle = 'rgba(15, 118, 110, 0.13)';
+      for (const seg of segments) {
+        const x0 = (seg.startMs / totalMs) * w;
+        const x1 = (seg.endMs / totalMs) * w;
+        ctx.fillRect(x0, 8, Math.max(2, x1 - x0), h - 16);
+      }
+
+      // Divider line
+      ctx.strokeStyle = '#e4e1d8';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(0, 144);
+      ctx.lineTo(w, 144);
+      ctx.stroke();
+
+      // Waveform envelope
+      ctx.strokeStyle = '#18181b';
+      ctx.lineWidth = 1.1;
+      ctx.beginPath();
+      const samplesPerPx = Math.max(1, Math.floor(pcm.length / w));
+      for (let x = 0; x < w; x++) {
+        const start = x * samplesPerPx;
+        const end = Math.min(pcm.length, start + samplesPerPx);
+        let min = 0, max = 0;
+        for (let i = start; i < end; i++) {
+          const v = pcm[i];
+          if (v < min) min = v;
+          if (v > max) max = v;
+        }
+        ctx.moveTo(x + 0.5, waveMid + min * (waveH * 0.46));
+        ctx.lineTo(x + 0.5, waveMid + max * (waveH * 0.46));
+      }
+      ctx.stroke();
+
+      // Hysteresis threshold dashed line
+      const threshY = probTop + probH * (1 - threshold);
+      ctx.save();
+      ctx.strokeStyle = '#b45309';
+      ctx.setLineDash([4, 4]);
+      ctx.lineWidth = 1.1;
+      ctx.beginPath();
+      ctx.moveTo(0, threshY);
+      ctx.lineTo(w, threshY);
+      ctx.stroke();
+      ctx.restore();
+
+      // Probability curve p(t)
+      if (probabilities && probabilities.length > 0) {
+        ctx.strokeStyle = '#0f766e';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        for (let i = 0; i < probabilities.length; i++) {
+          const x = (i / Math.max(1, probabilities.length - 1)) * w;
+          const y = probTop + probH * (1 - probabilities[i]);
+          if (i === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+      }
+
+      // Labels
+      ctx.fillStyle = '#71717a';
+      ctx.font = '500 11px "Geist Mono", monospace';
+      ctx.fillText('16 KHZ WAVEFORM + DETECTED SEGMENTS', 10, 20);
+      ctx.fillText(`SPEECH PROBABILITY p(t)  [threshold = ${threshold.toFixed(2)}]`, 10, 164);
+    }
+
+    async function runOnPcm(pcm16k) {
+      state.currentPcm = pcm16k;
+      const det = await ensureDetector();
+      const threshold = Number(els.threshSlider.value);
+      const redemptionMs = Number(els.redempSlider.value);
+
+      const detailed = await det.detect(pcm16k, {
+        threshold,
+        redemptionMs,
+        returnFrames: true,
+      });
+      const trimmed = await det.trim(pcm16k, { threshold, redemptionMs });
+
+      state.lastDetailed = detailed;
+      state.lastTrimmed = trimmed;
+      window.__WASM_VAD_LAST_RESULT__ = { detailed, seamStats: trimmed.seamStats };
+
+      els.kpiRtf.textContent = `${detailed.inferenceMs.toFixed(1)}ms (${detailed.rtf.toFixed(4)})`;
+      els.kpiRatio.textContent = `${(trimmed.speechRatio * 100).toFixed(1)}% (${trimmed.segments.length} seg)`;
+      els.kpiSeam.textContent = trimmed.seamStats.ratio > 0 ? `${trimmed.seamStats.ratio.toFixed(2)}x (OK)` : '0.00x (1 seg)';
+      els.summary.textContent = `${trimmed.durationMs} ms active speech / ${trimmed.originalDurationMs} ms total`;
+
+      els.chips.innerHTML = '';
+      trimmed.segments.forEach((seg, idx) => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'seg-chip';
+        btn.textContent = `#${idx + 1} ${(seg.startMs / 1000).toFixed(2)}s–${(seg.endMs / 1000).toFixed(2)}s (${Math.round(seg.confidence * 100)}%)`;
+        btn.addEventListener('click', () => playPcmBuffer(seg.pcm));
+        els.chips.appendChild(btn);
+      });
+
+      drawOscilloscope(pcm16k, detailed.probabilities, trimmed.segments, threshold);
+    }
+
+    async function loadPresetUrl(url) {
+      stopPlayback();
+      const res = await fetch(url);
+      const bytes = new Uint8Array(await res.arrayBuffer());
+      const { pcm, sampleRate } = decodeWav(bytes);
+      const det = await ensureDetector();
+      // Normalize via detector if needed
+      if (sampleRate !== 16000) {
+        const { resample16k } = await import('./wasm-vad.browser.mjs');
+        await runOnPcm(resample16k(pcm, sampleRate));
+      } else {
+        await runOnPcm(pcm);
+      }
+    }
+
+    function stopPlayback() {
+      if (state.activeSource) {
+        try { state.activeSource.stop(); } catch {}
+        state.activeSource = null;
+      }
+    }
+
+    async function playPcmBuffer(pcm) {
+      if (!pcm || pcm.length === 0) return;
+      stopPlayback();
+      if (!state.audioCtx) {
+        state.audioCtx = new AudioContext({ sampleRate: 16000 });
+      }
+      if (state.audioCtx.state === 'suspended') {
+        await state.audioCtx.resume();
+      }
+      const audioBuf = state.audioCtx.createBuffer(1, pcm.length, 16000);
+      audioBuf.getChannelData(0).set(pcm);
+      const src = state.audioCtx.createBufferSource();
+      src.buffer = audioBuf;
+      src.connect(state.audioCtx.destination);
+      src.start();
+      state.activeSource = src;
+    }
+
+    els.playOrig.addEventListener('click', () => playPcmBuffer(state.currentPcm));
+    els.playTrim.addEventListener('click', () => playPcmBuffer(state.lastTrimmed?.pcm));
+    els.dlTrim.addEventListener('click', () => {
+      if (!state.lastTrimmed) return;
+      const blob = new Blob([state.lastTrimmed.wav], { type: 'audio/wav' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'wasm-vad-trimmed.wav';
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+    });
+
+    document.querySelectorAll('#preset-strip button').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        document.querySelectorAll('#preset-strip button').forEach((b) => b.classList.remove('active'));
+        btn.classList.add('active');
+        await loadPresetUrl(btn.dataset.preset);
+      });
+    });
+
+    els.tierSelect.addEventListener('change', async () => {
+      if (state.currentPcm) await runOnPcm(state.currentPcm);
+    });
+
+    els.threshSlider.addEventListener('input', async () => {
+      els.threshVal.textContent = Number(els.threshSlider.value).toFixed(2);
+      if (state.currentPcm) await runOnPcm(state.currentPcm);
+    });
+
+    els.redempSlider.addEventListener('input', async () => {
+      els.redempVal.textContent = `${els.redempSlider.value} ms`;
+      if (state.currentPcm) await runOnPcm(state.currentPcm);
+    });
+
+    els.fileInput.addEventListener('change', async (ev) => {
+      const file = ev.target.files?.[0];
+      if (!file) return;
+      const arr = new Uint8Array(await file.arrayBuffer());
+      const { pcm, sampleRate } = decodeWav(arr);
+      const { resample16k } = await import('./wasm-vad.browser.mjs');
+      await runOnPcm(sampleRate === 16000 ? pcm : resample16k(pcm, sampleRate));
+    });
+
+    els.micBtn.addEventListener('click', async () => {
+      if (state.micController) {
+        await state.micController.stop();
+        state.micController = null;
+        els.micBtn.textContent = 'Live Mic (AudioWorklet)';
+        els.micBtn.classList.remove('active');
+        return;
+      }
+      stopPlayback();
+      const det = await ensureDetector();
+      det.reset();
+      state.liveProbHistory = [];
+      state.liveWaveHistory = new Float32Array(16000 * 6); // 6s rolling window
+
+      state.micController = await det.listen({
+        onFrame: (fr) => {
+          state.liveProbHistory.push(fr.probability);
+          if (state.liveProbHistory.length > 187) state.liveProbHistory.shift();
+          els.kpiRtf.textContent = `${fr.latencyMs.toFixed(2)}ms/frame`;
+          els.summary.textContent = fr.speaking
+            ? `SPEAKING · p=${fr.probability.toFixed(2)} · SNR ${fr.snrDb.toFixed(1)} dB`
+            : `Listening · p=${fr.probability.toFixed(2)}`;
+          drawOscilloscope(state.liveWaveHistory, state.liveProbHistory, [], Number(els.threshSlider.value));
+        },
+        onSpeechEnd: (seg) => {
+          state.lastTrimmed = { pcm: seg.pcm, wav: seg.wav };
+          const chip = document.createElement('button');
+          chip.type = 'button';
+          chip.className = 'seg-chip';
+          chip.textContent = `Live ${(seg.durationMs / 1000).toFixed(2)}s (${Math.round(seg.confidence * 100)}%)`;
+          chip.addEventListener('click', () => playPcmBuffer(seg.pcm));
+          els.chips.prepend(chip);
+        },
+      });
+      els.micBtn.textContent = 'Stop Live Mic';
+      els.micBtn.classList.add('active');
+    });
+
+    // Boot default preset automatically
+    loadPresetUrl('./samples/multiturn_3lang.wav').catch((err) => {
+      console.error('Playground init error:', err);
+      els.badge.textContent = 'Error: ' + err.message;
+    });
+  </script>
+</body>
+</html>

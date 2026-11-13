@@ -1,0 +1,35 @@
+{
+  "version": "0.1.0",
+  "license": "MIT (derived from Silero VAD v5, branch-free WebGPU/WASM distillation)",
+  "sampleRate": 16000,
+  "frameSamples": 512,
+  "contextSamples": 64,
+  "windowSamples": 576,
+  "cutPointTensor": "acoustic_features",
+  "rawBaselineBytes": 2327524,
+  "models": {
+    "studio": {
+      "file": "vad-studio.onnx",
+      "precision": "FP32 (0 If nodes, 0 LSTM ops, WebGPU + WASM SIMD native)",
+      "bytes": 1244994,
+      "sha256": "daf623cfef6a292f0245929594c91979ca2a9649049df16ea24a087ccf7a130b",
+      "compressionVsRaw": 1.87
+    },
+    "mobile": {
+      "file": "vad-mobile.onnx",
+      "precision": "Hybrid W8A32 (Int8 per-channel RNN/Conv) + FP16 (Fourier STFT basis + spectral Conv0)",
+      "bytes": 442422,
+      "sha256": "184400e84094dfd46f61c27946a6dcfe9d6c2a5b9993152006dd17393dbedcb7",
+      "compressionVsRaw": 5.26
+    }
+  },
+  "parity": {
+    "evaluatedWavClips": 12,
+    "evaluatedFrames": 1098,
+    "studioMaxAbsDiffVsRaw": 5.960464477539062e-07,
+    "studioMeanAbsDiffVsRaw": 2.6653807454204732e-08,
+    "mobileMaxAbsDiffVsStudio": 0.10088217258453369,
+    "mobileMeanAbsDiffVsStudio": 0.002062832614328909,
+    "mobileDecisionAgreementAt0_5": 0.998179
+  }
+}

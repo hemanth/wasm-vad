@@ -1,0 +1,83 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 340" width="980" height="340" role="img" aria-label="wasm-vad streaming architecture blueprint">
+  <defs>
+    <style>
+      .bg { fill: #ffffff; stroke: #000000; stroke-width: 1.5; }
+      .node { fill: #ffffff; stroke: #000000; stroke-width: 1.2; }
+      .focal { fill: #000000; stroke: #000000; stroke-width: 1.5; }
+      .badge { fill: #ffffff; stroke: #000000; stroke-width: 1.0; }
+      .wire { fill: none; stroke: #000000; stroke-width: 1.2; stroke-linecap: round; stroke-linejoin: round; }
+      .wire-dash { fill: none; stroke: #000000; stroke-width: 1.2; stroke-dasharray: 4 4; }
+      .title { font-family: 'Geist', 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif; font-size: 14px; font-weight: 700; fill: #000000; letter-spacing: -0.01em; }
+      .title-inv { font-family: 'Geist', 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif; font-size: 14px; font-weight: 700; fill: #ffffff; letter-spacing: -0.01em; }
+      .sub { font-family: 'Geist Mono', 'SF Mono', ui-monospace, monospace; font-size: 11px; fill: #333333; }
+      .sub-inv { font-family: 'Geist Mono', 'SF Mono', ui-monospace, monospace; font-size: 11px; fill: #e4e4e7; }
+      .cap { font-family: 'Geist Mono', 'SF Mono', ui-monospace, monospace; font-size: 10.5px; font-weight: 600; fill: #000000; letter-spacing: 0.06em; }
+    </style>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+      <path d="M 1 1.5 L 8.5 5 L 1 8.5 z" fill="#000000" />
+    </marker>
+  </defs>
+
+  <!-- Outer Frame -->
+  <rect x="6" y="6" width="968" height="328" rx="14" class="bg" />
+
+  <!-- Header Strip -->
+  <text x="28" y="34" class="cap">WASM-VAD // CAPABILITY-ROUTED 16 KHZ STREAMING BLUEPRINT</text>
+  <line x1="28" y1="46" x2="952" y2="46" class="wire" />
+
+  <!-- Stage 1: AudioWorklet / 16k Conditioning -->
+  <rect x="28" y="84" width="202" height="114" rx="10" class="node" />
+  <text x="44" y="112" class="title">1. AudioWorklet 16k</text>
+  <text x="44" y="133" class="sub">4th-ord Butterworth 7.4kHz</text>
+  <text x="44" y="151" class="sub">80Hz HPF + 50/60Hz Q=22</text>
+  <text x="44" y="169" class="sub">4x Float32(512) ring pool</text>
+  <rect x="44" y="177" width="118" height="15" rx="3" class="badge" />
+  <text x="51" y="188" class="cap">32MS + 4MS CTX</text>
+
+  <!-- Connector 1 -> 2 -->
+  <path d="M 230 141 L 266 141" class="wire" marker-end="url(#arrow)" />
+
+  <!-- Stage 2: Protobuf Split + Capability Router -->
+  <rect x="270" y="68" width="224" height="146" rx="10" class="node" />
+  <text x="286" y="96" class="title">2. Protobuf Split + ONNX</text>
+  <text x="286" y="117" class="sub">splitOnnxGraph() &lt; 1 ms</text>
+  <text x="286" y="135" class="sub">Enc [B,576]-&gt;[B,128] Conv</text>
+  <text x="286" y="153" class="sub">Rec [1,128]+state-&gt;p(t)</text>
+  <line x1="286" y1="165" x2="478" y2="165" class="wire-dash" />
+  <text x="286" y="183" class="sub">Studio 1.24MB | Mobile 432KiB</text>
+  <text x="286" y="199" class="sub">Fallback: Spectral-LRT (0KB)</text>
+
+  <!-- Connector 2 -> 3 -->
+  <path d="M 494 141 L 530 141" class="wire" marker-end="url(#arrow)" />
+
+  <!-- Stage 3: FOCAL INVERTED NODE — Hysteresis + Pre-Roll Arbiter -->
+  <rect x="534" y="76" width="218" height="130" rx="10" class="focal" />
+  <text x="550" y="105" class="title-inv">3. Hysteresis Arbiter</text>
+  <text x="550" y="127" class="sub-inv">Onset 0.50 / Offset 0.35</text>
+  <text x="550" y="145" class="sub-inv">128ms Plosive Pre-Roll</text>
+  <text x="550" y="163" class="sub-inv">320ms Geminate Hangover</text>
+  <text x="550" y="183" class="sub-inv">state [2,1,128] + SNR dB</text>
+
+  <!-- Connector 3 -> 4 -->
+  <path d="M 752 141 L 788 141" class="wire" marker-end="url(#arrow)" />
+
+  <!-- Stage 4: De-Clicked Utterance Output -->
+  <rect x="792" y="84" width="160" height="114" rx="10" class="node" />
+  <text x="808" y="112" class="title">4. Speech Stream</text>
+  <text x="808" y="133" class="sub">segments[] + WAV</text>
+  <text x="808" y="151" class="sub">8ms Hann crossfade</text>
+  <text x="808" y="169" class="sub">seam ratio &lt;= 1.5x</text>
+  <rect x="808" y="177" width="112" height="15" rx="3" class="badge" />
+  <text x="815" y="188" class="cap">ZERO CLICKS</text>
+
+  <!-- Bottom Zero-Copy Recycle Return Loop (Orthogonal Routing) -->
+  <path d="M 382 214 L 382 272 Q 382 284 370 284 L 141 284 Q 129 284 129 272 L 129 202" class="wire" marker-end="url(#arrow)" />
+  <rect x="176" y="272" width="168" height="22" rx="4" class="badge" />
+  <text x="186" y="287" class="sub">recycle ArrayBuffer (0 GC)</text>
+
+  <!-- Two-Layer Cache Callout -->
+  <rect x="534" y="246" width="418" height="58" rx="8" class="node" />
+  <text x="550" y="269" class="title">Persistent Origin Cache + Capability Router</text>
+  <text x="550" y="289" class="sub">CacheStorage + IndexedDB | Desktop COI 4T vs Mobile 1T WASM</text>
+  <path d="M 534 275 L 444 275 Q 432 275 432 263 L 432 218" class="wire-dash" marker-end="url(#arrow)" />
+</svg>
