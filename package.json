@@ -1,6 +1,6 @@
 {
   "name": "wasm-vad",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Streaming 16 kHz voice activity detection for browsers and Node.js via capability-routed WebGPU/WASM SIMD ONNX specialists (432 KiB mobile / 1.24 MB studio), AudioWorklet anti-aliased capture, and zero-dep spectral-LRT fallback.",
   "type": "module",
   "main": "dist/index.cjs",
@@ -53,14 +53,13 @@
     "webrtc",
     "zero-dependency"
   ],
+  "dependencies": {
+    "onnxruntime-web": "^1.21.0"
+  },
   "peerDependencies": {
-    "onnxruntime-web": ">=1.18.0",
     "onnxruntime-node": ">=1.18.0"
   },
   "peerDependenciesMeta": {
-    "onnxruntime-web": {
-      "optional": true
-    },
     "onnxruntime-node": {
       "optional": true
     }

@@ -1489,7 +1489,7 @@ async function startAudioWorkletCapture(detector, streamOrOptions = {}) {
 }
 
 // src/index.js
-var CDN_MODEL_BASE = "https://cdn.jsdelivr.net/npm/wasm-vad@0.1.0/models/";
+var CDN_MODEL_BASE = "https://cdn.jsdelivr.net/npm/wasm-vad@0.1.1/models/";
 function isAudioInput(val) {
   if (!val) return false;
   if (typeof val === "string") return true;
@@ -1564,23 +1564,48 @@ async function normalizeAudioTo16k(input, sampleRateHint = TARGET_SAMPLE_RATE) {
   );
 }
 async function loadOrtRuntime(caps, userOrt, wasmPaths) {
-  if (caps.backend === "dsp") return null;
-  if (userOrt) return userOrt;
-  if (typeof globalThis.ort !== "undefined" && globalThis.ort?.InferenceSession) {
-    return globalThis.ort;
+  if (caps.backend === "dsp") return { ort: null, caps };
+  const isNodeEnv = typeof process !== "undefined" && Boolean(process.versions?.node) && typeof window === "undefined";
+  if (userOrt) {
+    if (isNodeEnv && userOrt?.env?.wasm) {
+      userOrt.env.wasm.numThreads = 1;
+      userOrt.env.wasm.simd = true;
+    }
+    return { ort: userOrt, caps };
   }
-  const isNode = caps.deviceClass === "node-server";
-  if (isNode) {
-    try {
-      const mod = await import("onnxruntime-node");
-      return mod.default || mod;
-    } catch {
+  if (typeof globalThis.ort !== "undefined" && globalThis.ort?.InferenceSession) {
+    return { ort: globalThis.ort, caps };
+  }
+  if (isNodeEnv) {
+    if (caps.backend !== "wasm") {
       try {
-        const webMod = await import("onnxruntime-web");
-        return webMod.default || webMod;
+        const mod = await import("onnxruntime-node");
+        return { ort: mod.default || mod, caps };
       } catch {
-        return null;
       }
+    }
+    try {
+      const webMod = await import("onnxruntime-web");
+      const ort = webMod.default || webMod;
+      if (ort?.env?.wasm) {
+        ort.env.wasm.numThreads = 1;
+        ort.env.wasm.simd = true;
+      }
+      const updatedCaps = {
+        ...caps,
+        backend: "wasm",
+        executionProviders: ["wasm"],
+        numThreads: 1,
+        sessionOptions: {
+          executionProviders: ["wasm"],
+          enableCpuMemArena: false,
+          enableMemPattern: false,
+          graphOptimizationLevel: "all"
+        }
+      };
+      return { ort, caps: updatedCaps };
+    } catch {
+      return { ort: null, caps };
     }
   } else {
     try {
@@ -1591,9 +1616,9 @@ async function loadOrtRuntime(caps, userOrt, wasmPaths) {
         ort.env.wasm.simd = true;
         if (wasmPaths) ort.env.wasm.wasmPaths = wasmPaths;
       }
-      return ort;
+      return { ort, caps };
     } catch {
-      return null;
+      return { ort: null, caps };
     }
   }
 }
@@ -1602,7 +1627,7 @@ async function loadModelBytes(caps, options) {
     return options.modelBytes instanceof Uint8Array ? options.modelBytes : new Uint8Array(options.modelBytes);
   }
   const modelFile = caps.tier === "mobile" ? "vad-mobile.onnx" : "vad-studio.onnx";
-  const isNode = caps.deviceClass === "node-server";
+  const isNode = typeof process !== "undefined" && Boolean(process.versions?.node) && typeof window === "undefined";
   if (isNode && (!options.modelUrl || !/^https?:\/\//i.test(options.modelUrl))) {
     const fs = await import("node:fs/promises");
     const path = await import("node:path");
@@ -1947,7 +1972,9 @@ async function vad(inputOrOptions = {}, maybeOptions = {}) {
   const oneShot = isAudioInput(inputOrOptions);
   const options = oneShot ? maybeOptions || {} : inputOrOptions || {};
   let caps = detectCapabilities(options);
-  const ort = await loadOrtRuntime(caps, options.ort, options.wasmPaths);
+  const loaded = await loadOrtRuntime(caps, options.ort, options.wasmPaths);
+  const ort = loaded.ort;
+  caps = loaded.caps;
   if (!ort && caps.backend !== "dsp") {
     if (options.strictOnnx) {
       throw new Error(

@@ -144,6 +144,14 @@ test('3-line smart one-shot vad(path) and reusable detector across studio, mobil
     assert.ok(segs[0].confidence > 0.5);
     await detector.dispose();
   }
+
+  // Also verify pure WASM (`onnxruntime-web`) execution path inside Node.js without `onnxruntime-node`
+  const wasmNodeDetector = await vad({ tier: 'mobile', backend: 'wasm' });
+  assert.equal(wasmNodeDetector.info.backend, 'wasm');
+  assert.equal(wasmNodeDetector.info.numThreads, 1);
+  const wasmSegs = await wasmNodeDetector.detect(samplePath);
+  assert.ok(wasmSegs.length >= 1);
+  await wasmNodeDetector.dispose();
 });
 
 test('Streaming detector.frame() with arbitrary chunk sizes + detector.stream() async generator', async () => {

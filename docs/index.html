@@ -527,7 +527,7 @@
     </p>
 
     <div class="install-bar">
-      <span>$ npm install wasm-vad onnxruntime-web</span>
+      <span>$ npm install wasm-vad</span>
       <button id="copy-install" type="button">Copy</button>
     </div>
 
@@ -908,7 +908,7 @@ const mic = await detector.listen({
     };
 
     els.copyBtn.addEventListener('click', () => {
-      navigator.clipboard?.writeText('npm install wasm-vad onnxruntime-web');
+      navigator.clipboard?.writeText('npm install wasm-vad');
       els.copyBtn.textContent = 'Copied';
       setTimeout(() => (els.copyBtn.textContent = 'Copy'), 1400);
     });

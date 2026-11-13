@@ -30,7 +30,7 @@ import { SpectralVadEngine } from './spectral-vad.js';
 import { VadHysteresisArbiter, buildContextWindows, DEFAULT_VAD_OPTIONS } from './hysteresis.js';
 import { startAudioWorkletCapture } from './worklet.js';
 
-const CDN_MODEL_BASE = 'https://cdn.jsdelivr.net/npm/wasm-vad@0.1.0/models/';
+const CDN_MODEL_BASE = 'https://cdn.jsdelivr.net/npm/wasm-vad@0.1.1/models/';
 
 function isAudioInput(val) {
   if (!val) return false;
@@ -120,24 +120,52 @@ async function normalizeAudioTo16k(input, sampleRateHint = TARGET_SAMPLE_RATE) {
 }
 
 async function loadOrtRuntime(caps, userOrt, wasmPaths) {
-  if (caps.backend === 'dsp') return null;
-  if (userOrt) return userOrt;
+  if (caps.backend === 'dsp') return { ort: null, caps };
+  const isNodeEnv = typeof process !== 'undefined' && Boolean(process.versions?.node) && typeof window === 'undefined';
+
+  if (userOrt) {
+    if (isNodeEnv && userOrt?.env?.wasm) {
+      userOrt.env.wasm.numThreads = 1;
+      userOrt.env.wasm.simd = true;
+    }
+    return { ort: userOrt, caps };
+  }
   if (typeof globalThis.ort !== 'undefined' && globalThis.ort?.InferenceSession) {
-    return globalThis.ort;
+    return { ort: globalThis.ort, caps };
   }
 
-  const isNode = caps.deviceClass === 'node-server';
-  if (isNode) {
-    try {
-      const mod = await import('onnxruntime-node');
-      return mod.default || mod;
-    } catch {
+  if (isNodeEnv) {
+    if (caps.backend !== 'wasm') {
       try {
-        const webMod = await import('onnxruntime-web');
-        return webMod.default || webMod;
+        const mod = await import('onnxruntime-node');
+        return { ort: mod.default || mod, caps };
       } catch {
-        return null;
+        // Fall through to bundled `onnxruntime-web` WASM SIMD engine
       }
+    }
+    try {
+      const webMod = await import('onnxruntime-web');
+      const ort = webMod.default || webMod;
+      if (ort?.env?.wasm) {
+        // Keep numThreads=1 in Node so Emscripten pthread workers never hang CLI / serverless exits
+        ort.env.wasm.numThreads = 1;
+        ort.env.wasm.simd = true;
+      }
+      const updatedCaps = {
+        ...caps,
+        backend: 'wasm',
+        executionProviders: ['wasm'],
+        numThreads: 1,
+        sessionOptions: {
+          executionProviders: ['wasm'],
+          enableCpuMemArena: false,
+          enableMemPattern: false,
+          graphOptimizationLevel: 'all',
+        },
+      };
+      return { ort, caps: updatedCaps };
+    } catch {
+      return { ort: null, caps };
     }
   } else {
     try {
@@ -148,9 +176,9 @@ async function loadOrtRuntime(caps, userOrt, wasmPaths) {
         ort.env.wasm.simd = true;
         if (wasmPaths) ort.env.wasm.wasmPaths = wasmPaths;
       }
-      return ort;
+      return { ort, caps };
     } catch {
-      return null;
+      return { ort: null, caps };
     }
   }
 }
@@ -161,7 +189,7 @@ async function loadModelBytes(caps, options) {
   }
 
   const modelFile = caps.tier === 'mobile' ? 'vad-mobile.onnx' : 'vad-studio.onnx';
-  const isNode = caps.deviceClass === 'node-server';
+  const isNode = typeof process !== 'undefined' && Boolean(process.versions?.node) && typeof window === 'undefined';
 
   if (isNode && (!options.modelUrl || !/^https?:\/\//i.test(options.modelUrl))) {
     const fs = await import('node:fs/promises');
@@ -572,7 +600,9 @@ export default async function vad(inputOrOptions = {}, maybeOptions = {}) {
   const options = oneShot ? maybeOptions || {} : inputOrOptions || {};
 
   let caps = detectCapabilities(options);
-  const ort = await loadOrtRuntime(caps, options.ort, options.wasmPaths);
+  const loaded = await loadOrtRuntime(caps, options.ort, options.wasmPaths);
+  const ort = loaded.ort;
+  caps = loaded.caps;
 
   if (!ort && caps.backend !== 'dsp') {
     if (options.strictOnnx) {

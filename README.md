@@ -3,7 +3,7 @@
 Detect speech turns and strip silence at 16 kHz in browsers and Node.js via branch-free WebGPU/WASM ONNX specialists (432 KiB mobile / 1.24 MB studio) and a zero-dependency spectral fallback.
 
 ```bash
-npm install wasm-vad onnxruntime-web
+npm install wasm-vad
 ```
 
 ## Quick start
@@ -44,7 +44,7 @@ for await (const utterance of detector.stream(pcmAsyncIterable, { sampleRate: 48
 }
 ```
 
-Pass `tier: 'mobile'` (`432 KiB` hybrid `W8A32+FP16` on single-thread WASM), `tier: 'studio'` (`1.24 MB` `FP32` with `<1 ms` binary protobuf graph splitting), or `tier: 'dsp'` (`0 KB` zero-dependency spectral-LRT engine). In Node.js, install `onnxruntime-node` instead of `onnxruntime-web`.
+Pass `tier: 'mobile'` (`432 KiB` hybrid `W8A32+FP16` on single-thread WASM), `tier: 'studio'` (`1.24 MB` `FP32` with `<1 ms` binary protobuf graph splitting), or `tier: 'dsp'` (`0 KB` zero-weight spectral-LRT engine). Works out of the box in browsers and Node.js via bundled `onnxruntime-web` (or optional `onnxruntime-node` on servers).
 
 ## CLI
 
